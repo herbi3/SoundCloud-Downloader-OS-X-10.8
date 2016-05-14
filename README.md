@@ -32,6 +32,7 @@ This will download the individual song, get the song album artwork and add it to
 02/05/2016 Update
 
 ·Updated code to work with iTunes 12.3.3+
+·Fixed Client ID
 	
 27/11/2015 Update
 
