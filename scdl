@@ -1,0 +1,510 @@
+#!/bin/bash
+# Author: Herbi3
+# Saturday, 10 October 2015
+##############################################################
+
+echo ' *---------------------------------------------------------------------------*'
+echo ' |           SC Download            |                 Herbi3                 |'
+echo ' *---------------------------------------------------------------------------*'
+
+function CURL(){ # Just a code shortcut
+    curl -L -s --user-agent 'Mozilla/5.0' "$1"
+}
+
+function log() { # Logging function
+	local level
+	level="$1"; shift
+	if [[ "$level" -le "$logVerbosity" ]] ; then
+		case "$level" in
+			0)
+				;;
+			1)
+				echo -n "Error:"; ;;
+			2)
+				echo -n "Warning:"; ;;
+			3)
+				echo -n "·"; ;;
+			4)
+				echo -n "Debug:"; ;;
+		esac
+		echo " $@";
+	fi
+}
+
+function settags() { # Set the mp3 tags
+#    local artist=$1
+#    local title=$2
+#    local filename=$3
+#    local genre=$4
+#    local imageurl=$5
+#    local album=$6
+
+    curl -s -L --user-agent 'Mozilla/5.0' "$imageurl" -o "/tmp/soundcloud.jpg"
+
+   if 
+	[ "$writags" = "1" ] && [ "$songtitleartist" == '1' ] ; then
+        eyeD3 --remove-all "$filename" &>/dev/null
+        eyeD3 --add-image="/tmp/soundcloud.jpg:ILLUSTRATION" \
+            --add-image="/tmp/soundcloud.jpg:OTHER" \
+            --add-image="/tmp/soundcloud.jpg:MEDIA" \
+            --add-image="/tmp/soundcloud.jpg:ICON" \
+            --add-image="/tmp/soundcloud.jpg:MEDIA" \
+            --add-image="/tmp/soundcloud.jpg:OTHER_ICON" \
+            --add-image="/tmp/soundcloud.jpg:FRONT_COVER" \
+            --artist="$titleartist" -Y $(date +%Y) --genre="$genre" \
+            --title="$title" --album="$album" --comment="$comment" --v2 "$filename" &>/dev/null
+        log 3 "Setting tags finished!"
+
+	elif [ "$writags" = "1" ] ; then
+        eyeD3 --remove-all "$filename" &>/dev/null
+        eyeD3 --add-image="/tmp/soundcloud.jpg:ILLUSTRATION" \
+            --add-image="/tmp/soundcloud.jpg:OTHER" \
+            --add-image="/tmp/soundcloud.jpg:MEDIA" \
+            --add-image="/tmp/soundcloud.jpg:ICON" \
+            --add-image="/tmp/soundcloud.jpg:MEDIA" \
+            --add-image="/tmp/soundcloud.jpg:OTHER_ICON" \
+            --add-image="/tmp/soundcloud.jpg:FRONT_COVER" \
+            --artist="$artist" -Y $(date +%Y) --genre="$genre" \
+            --title="$title" --album="$album" --comment="$comment" --v2 "$filename" &>/dev/null
+        log 3 "Setting tags finished!"
+    else
+        log 3 "Setting tags skipped (please install eyeD3)"
+    fi
+}
+
+function downsong() { # Parse json for one song
+    url="$1"
+    overrideartist="$2"
+    log 3 "Getting artists page"
+    log 4 "https://api.soundcloud.com/resolve.json?url=$url&client_id=$clientID"
+    songID=$(CURL "https://api.soundcloud.com/resolve.json?url=$url&client_id=$clientID" | tr "," "\n" | sed -n "2p" | cut -d ':' -f 2)
+    log 4 "songID is : $songID"
+    fromjsontomp3 "$songID" "$clientID" "" "$overrideartist"
+}
+
+function fromjsontomp3 { # use the json to download info and mp3
+    setfileartist="$4"
+    setname="$3"
+    clientID="$2"
+    songID="$1"
+    log 4 "https://api.soundcloud.com/tracks/$songID.json?client_id=$clientID"
+    songinfo=$(CURL "https://api.soundcloud.com/tracks/$songID.json?client_id=$clientID" | tr "," "\n")
+    title=$(printf "%s\n" "$songinfo" | grep '"title"' | cut -c 10- | cut -d '-' -f2 | rev | cut -d '"' -f2 | rev | cut -d '[' -f1 | sed 's/^[ \]*//;s/[ \]*$//' | tr '[]\/:*?|<>' '()--------' )
+    songurl=$(echo -e "$songinfo" | grep "stream_url" | cut -d '"' -f 4)
+    realsongurl=$(echo -e "$songurl?client_id=$clientID")
+    artist=$(echo -e "$songinfo" | grep "username" | cut -d '"' -f 4)
+    titleartist=$(echo -e "$songinfo" | grep '"title"' | cut -c 10- | cut -d '-' -f1 | rev | cut -d '"' -f2 | rev | cut -d '[' -f1 | sed 's/^[ \]*//;s/[ \]*$//' | tr '[]\/:*?|<>' '()--------' )
+    
+    if [ -z $setfileartist ]; then 
+	account=$artist
+    else
+	account=$setfileartist
+    fi
+
+    if [[ $DivideChar==1 ]]; then
+	
+	re="^([^-]+)-(.*)$"
+	[[ $title =~ $re ]] && artist="${BASH_REMATCH[1]}" && title="${BASH_REMATCH[2]}"
+	log 4 "Account Artist: $artist"	
+	log 4 "Title: $title"	
+	
+    fi
+
+    if [[ $title =~ "$artist" ]] ; then 
+        filename=$(printf "%s.mp3" "$title")
+    elif [[ $NoArtistInSong == 1 ]] ; then 
+	log 4 "Skipping artist in songname"
+        filename=$(printf "%s.mp3" "$title")
+    elif [[ $songtitleartist == 1 ]] ; then 
+	log 4 "Artist from Title: $titleartist"
+	filename=$(printf "%s - %s.mp3" "$titleartist" "$title")
+    else
+        filename=$(printf "%s - %s.mp3" "$artist" "$title")
+    fi
+    imageurl=$(echo -e "$songinfo" | grep "artwork_url" | cut -d '"' -f 4 | sed 's/large/t500x500/g')
+    genre=$(echo -e "$songinfo" | grep "genre" | cut -d '"' -f 4)
+    songpermalink=$(echo -e "$songinfo" | grep -m2 "permalink_url" | tail -n1 | cut -d '"' -f 4)
+	log 4 "Track permalink_url : $songpermalink"
+    initunesxml=$(grep -c -m1 -i -r "$title" "$itunesxmllibrary" | cut -d ':' -f 2)
+    atristmatchsong=$(grep -m2 -A1 -i -r "$title" "$itunesxmllibrary" | tr -d '#38;' | grep -c -i "$titleartist")
+
+    if [ -e "$filename" ]; then
+	log 3 "File is already in main folder"
+        log 3 "$title has already been downloaded..."  && $cont   
+    elif [[ "$AddToiTunes" == '1' ]] && [[ "$initunesxml" == '1' ]] && [[ "$atristmatchsong" == '1' ]]; then
+	log 3 "File is in iTunes Library"
+        log 3 "$title is already in iTunes…"  && $cont 
+    elif [ -e "$account/$filename" ]; then
+	log 3 "File is in $pathtomusic/$account/$filename"
+        log 3 "$title has already been downloaded..."  && $cont 
+    else
+		log 3 "Downloading $title..."
+		curl -# -L --user-agent 'Mozilla/5.0' -o "`echo -e "$filename"`" "$realsongurl"
+		settags "$artist" "$title" "$filename" "$genre" "$comment" "$imageurl" "$setname"
+		log 3 "Downloading of $filename finished"
+	    
+		##Moving file
+		if [[ "$AddToiTunes" == '1' ]]; then
+				cp "$filename" "$itunesautofolder"
+				rm "$filename"
+				log 3 ""$title" was added to iTunes!"
+			elif [[ "$songtitleartist" == '1' ]]; then
+				mkdir -p "$titleartist"
+				cp "$filename" "$titleartist/$filename"
+				rm "$filename"
+				log 3 "Artist is now set to ""$titleartist"""
+			else
+			    		mkdir -p "$account"
+					cp "$filename" "$account/$filename"
+					rm "$filename"
+			
+		fi
+    fi
+}
+
+function downlike()  { # Parse json for all user's like
+    log 3 "Getting artist's likes page"
+    artistnm=$(echo "$1" | cut -d '/' -f 4)
+    likeurl=$(echo "https://soundcloud.com/$artistnm")
+    log 4 "https://api.soundcloud.com/resolve.json?url=$likeurl&client_id=$clientID"
+    artistID=$(CURL "https://api.soundcloud.com/resolve.json?url=$likeurl&client_id=$clientID" | tr "," "\n" | sed -n "1p" | cut -d ':' -f 2)
+    realname=$(CURL "https://api.soundcloud.com/resolve.json?url=$likeurl&client_id=$clientID" | tr "," "\n" | tr -d '"' | grep 'username'| sed -n "1p" | cut -d ':' -f 2)
+    log 4 "artistID is : $artistID ($realname)"
+    offset=$default_offset
+    likepage=$(CURL "https://api.soundcloud.com/users/$artistID/favorites.json?client_id=$clientID&limit=1&offset=$offset")
+    while [[ $(echo "$likepage" | grep 'id') != '' ]]
+    do
+        log 4 "https://api.soundcloud.com/users/$artistID/favorites.json?client_id=$clientID&limit=1&offset=$offset"
+        setsongID=$(echo "$likepage" | tr "," "\n" | grep '"uri"' | grep 'tracks' | cut -d '"' -f 4 | cut -d '/' -f 5)
+        ((offset++))
+        echo ""
+        log 3 "Song liked n°$offset by $artistnm"
+        fromjsontomp3 "$setsongID" "$clientID" "" "$realname's Likes"
+        likepage=$(CURL "https://api.soundcloud.com/users/$artistID/favorites.json?client_id=$clientID&limit=1&offset=$offset")
+    done
+    echo ""
+    log 3 "There was $offset songs."
+}
+
+function downset() { # Parse json for one user's set
+    log 4 "https://api.soundcloud.com/playlists/$playlistID.json?limit=1&offset=$setOffset&client_id=$clientID"
+    log 3 "Getting set page"
+    url="$1"
+    overrideartist="$2"
+    setpage=$(CURL $url)
+    log 4 "https://api.soundcloud.com/resolve.json?url=$url&client_id=$clientID"
+    playlistID=$(CURL "https://api.soundcloud.com/resolve.json?url=$url&client_id=$clientID" | tr "," "\n" | grep 'https://api.soundcloud.com/playlists' | cut -d '/' -f 5)
+    log 4 "playlistID is : $playlistID"
+
+    setOffset=0
+    setpage=$(CURL "https://api.soundcloud.com/playlists/$playlistID.json?limit=1&offset=$setOffset&client_id=$clientID")
+    setTitle=$(echo "$setpage" | tr "{" "\n" | grep '"playlist"' | tr "," "\n" | grep '"title"' | cut -d '"' -f 4)
+    trackExist=$(echo "$setpage" | tr "," "\n" | grep '"tracks"' | cut -d ':' -f 2)
+    while [[ "$trackExist" != '[]' && "$trackExist" != '' ]]
+    do
+        setsongID=$(echo "$setpage" | tr "," "\n" | grep '"uri"' | grep 'tracks' | cut -d '"' -f 4 | cut -d '/' -f 5)
+        ((setOffset++))
+        echo ""
+        log 3 "Song #$setOffset from the Set : $setTitle"
+        fromjsontomp3 "$setsongID" "$clientID" "$setTitle" "$overrideartist"
+        setpage=$(CURL "https://api.soundcloud.com/playlists/$playlistID.json?limit=1&offset=$setOffset&client_id=$clientID")
+        trackExist=$(echo "$setpage" | tr "," "\n" | grep '"tracks"' | cut -d ':' -f 2)
+    done
+    echo ""
+    log 3 "There was $setOffset songs in the set $setTitle."
+}
+
+function downallsongs() { # Parse json for all user's songs
+    url="$1"
+    artistname=$(echo "$1" | cut -d '/' -f 4)
+    log 3 "Getting artists page of $artistname"
+    page=$(CURL $url)
+    artistID=$(CURL "https://api.soundcloud.com/resolve.json?url=$url&client_id=$clientID" | tr "," "\n" | sed -n "1p" | cut -d ':' -f 2)
+    realname=$(CURL "https://api.soundcloud.com/resolve.json?url=$url&client_id=$clientID" | tr "," "\n" | tr -d '"' | grep 'username'| sed -n "1p" | cut -d ':' -f 2)    
+    echo ""
+
+    offset=$default_offset
+    artistpage=$(CURL "https://api.soundcloud.com/e1/users/$artistID/sounds.json?limit=1&offset=$offset&client_id=$clientID")
+    
+    log 4 "REALNAME: $realname"
+
+    while [[ $(echo "$artistpage" | grep 'id') != '' ]]
+    do
+        playlist=$(echo "$artistpage" | tr "," "\n" | grep '"playlist"' | cut -c 14-)
+        ((offset++))
+        if [[ "$playlist" != "null" ]]; then
+            log 3 "The n°$offset is a playlist"
+            thisset=$(echo "$artistpage" | tr "," "\n" | grep '"permalink_url"' | sed -n 1p | cut -d '"' -f 4)
+            downset "$thisset" "$realname"
+        else
+            echo ""
+            log 3 "Song #$offset"
+            typesong=$(echo "$artistpage" | tr "," "\n" | grep '"type"' | cut -d '"' -f 4)
+            if [[ "$typesong" == "track" ]] && [[ "$onlyrepost" == "0" ]] ; then
+                artistsongurl=$(echo "$artistpage" | tr "," "\n" | grep 'permalink_url' | sed '1d' | cut -d '"' -f 4)
+                downsong "$artistsongurl"
+            elif [[ "$typesong" == "playlist" ]] && [[ "$onlyrepost" == "0" ]]; then
+                artistsongurl=$(echo "$artistpage" | tr "," "\n" | grep 'permalink_url' | cut -d '"' -f 4)
+                downset "$artistsongurl"
+            elif [[ "$typesong" == "playlist_repost" ]]; then
+                artistsongurl=$(echo "$artistpage" | tr "," "\n" | grep 'permalink_url' | cut -d '"' -f 4)
+                if [[ "$KeepFolders" == '1' ]]; then
+			downset "$artistsongurl" "$realname"
+		else
+			downset "$artistsongurl"
+		fi
+            elif [[ "$typesong" == "track_repost" ]]; then
+                artistsongurl=$(echo "$artistpage" | tr "," "\n" | grep 'permalink_url' | sed '1d' | cut -d '"' -f 4)
+                if [[ "$KeepFolders" == '1' ]]; then
+			downsong "$artistsongurl" "$realname"
+		else
+			downsong "$artistsongurl" 
+		fi
+            fi
+        fi
+        artistpage=$(CURL "https://api.soundcloud.com/e1/users/$artistID/sounds.json?limit=1&offset=$offset&client_id=$clientID")
+    done
+    echo ""
+    log 3 "There was $offset songs/sets."
+}
+
+function downallsets() { # Parse json for all user's sets
+    artistnm=$(echo "$1" | cut -d '/' -f 4)
+    seturl=$(echo "https://soundcloud.com/$artistnm")
+    log 3 "Getting artist's set page"
+    page=$(CURL $seturl)
+    realname=$(CURL "https://api.soundcloud.com/resolve.json?url=$1&client_id=$clientID" | tr "," "\n" | tr -d '"' | grep 'username'| sed -n "1p" | cut -d ':' -f 2)
+    log 4 "https://api.soundcloud.com/resolve.json?url=$seturl&client_id=$clientID"
+    artistID=$(CURL "https://api.soundcloud.com/resolve.json?url=$seturl&client_id=$clientID"  | tr "," "\n" | sed -n "1p" | cut -d ':' -f 2)
+    log 4 "artistID is : $artistID"
+    all_offset=0
+    allsetpage=$(CURL "https://api.soundcloud.com/users/$artistID/playlists.json?limit=1&offset=$all_offset&client_id=$clientID")
+    while [[ $(echo "$allsetpage" | grep 'id') != '' ]]
+    do
+        thisset=$(echo "$allsetpage" | tr "," "\n" | grep '"permalink_url"'  | sed -n 1p | cut -d '"' -f 4)
+        ((all_offset++))
+        echo ""
+        log 3 "Set n°$all_offset from $artistnm"
+        downset "$thisset" "$realname"
+        log 3 "Set n°$all_offset from $artistnm downloaded"
+        allsetpage=$(CURL "https://api.soundcloud.com/users/$artistID/playlists.json?limit=1&offset=$all_offset&client_id=$clientID")
+    done
+    echo ""
+    log 3 "There was $all_offset sets."
+}
+
+function downgroup() { # Parse json for a group
+    groupurl="$1"
+    log 3 "Getting group page"
+    groupage=$(CURL "$groupurl")
+    groupid=$(echo "$groupage" | grep "html5-code-groups" | tr " " "\n" | grep "html5-code-groups-" | cut -d '"' -f 2 | sed '2d' | cut -d '-' -f 4)
+    trackspage=$(CURL "https://api.soundcloud.com/groups/$groupid/tracks.json?client_id=$clientID" | tr "}" "\n")
+    trackspage=$(echo "$trackspage" | tr "," "\n" | grep 'permalink_url' | sed '1d' | sed -n '1~2p')
+    songcount=$(echo "$trackspage" | wc -l)
+    log 3 "Found $songcount songs!"
+    for (( i=1; i <= $songcount; i++ ))
+    do
+        echo -e "\n---------- Downloading Song #$i ----------"
+        thisongurl=$(echo "$trackspage" | sed -n "$i"p | cut -d '"' -f 4)
+        downsong "$thisongurl"
+        echo "----- Downloading Song #$i finished ------"
+    done
+}
+
+function structurize(){
+$filename="$1"
+$artist="$2"
+$set="$3"
+
+}
+
+function show_help() { # Display some help
+    all=$1
+    echo ""
+    log 3 "Usage: scdl [OPTION] -l [URL] -s"
+    echo "    With url like :"
+    echo "        https://soundcloud.com/user (Download all of that user's songs)"
+    echo "        https://soundcloud.com/user/song-name (Download that song only)"
+    echo "        https://soundcloud.com/user/sets (Download all of the user's sets)"
+    echo "        https://soundcloud.com/user/sets/set-name (Download one set only)"
+    echo ""
+    echo "        This will automatically get the artist from the song title, and will also be added to iTunes"
+    if [[ "$all" == "full" ]]; then
+        echo ""
+        echo ""
+        echo "OPTION :"
+        echo ""
+        echo "  -l [URL]	Use this Url. (I need dis) "
+        echo "  -o [OFFSET]	Begin the download with a custom offset."
+        echo "  -p [PATH]	Use a custom path (Default is $pathtomusic)."
+        echo "  -c		Script will continue if a sound as already been downloaded."
+        echo "  -r		Download only the repost."
+        echo "  -d		Debug."
+        echo "  -q		Quiet, only warnings and errors."
+        echo "  -h		Show this help."
+        echo "  -b		Don't get artist from song title."
+        echo "			e.g. Won't use the account name as the artist"
+        echo "  -x		Add custom comment for iTunes. (Default comment is SoundCloud)"
+	echo "  -s		Don't automatically add to iTunes."
+	echo "  -k		Save Reposts in the Folder of the Poster(Also Sets)"
+	echo "  -a		Dont add artist to songname."
+	echo "  -m		Divide Songname on a minus ('-') to get artist and songname."
+	echo "                  	e.g. 'Flume - Warm Thoughts' -> Artist=Flume | Title=Warm Thoughts"
+    else
+        echo ""
+        echo "	Enter 'scdl -h' for more information."
+    fi
+}
+
+function get_arg() { # Parse arguments
+    while getopts "bcrskmado:l:px:hdq" opt
+    do
+        case $opt in
+            h)
+                show_help full; exit 1
+                ;;
+            c)
+                cont=":"
+                continue_info='continue'
+                ;;
+            r)
+                onlyrepost=1
+                ;;
+            o) # Need argument
+                default_offset=$OPTARG
+                if ! [[ $default_offset =~ $number ]] ; then
+                    log 1 "Offset should be a number"; exit 1
+                fi
+                ;;
+            l) # Need argument
+                userLink=$OPTARG
+                ;;
+            p) # Need argument
+                if [ -d "$OPTARG" ]; then
+                    pathtomusic="$OPTARG"
+                else
+                    log 1 "Directory specified does not exist."; show_help; exit 1
+                fi
+                ;;
+            d) # debug
+                logVerbosity=4
+                ;;
+            q) # quiet
+                logVerbosity=2
+                ;;
+	    b) # Artist from song title
+		songtitleartist=0
+		;;
+            x) # Custom comment
+                comment=$OPTARG
+		customcomment=1
+		;;
+	    s) # Add this to iTunes
+                AddToiTunes=0
+                ;;
+	    k) # (keep) save reposts in folder of poster
+                KeepFolders=1
+                ;;
+	    a) # no artist name in sogname (usefull if the guy is promoting other artists like mrsuicidesheep is doing)
+                NoArtistInSong=1
+                ;;
+	    m) #get songname by dividing at specific chars(multiple possible) for example the title "Digital Underground - Doowutchyalike" would have artist "Digital Underground" and songname "Doowutchyalike" in mp3 tags aswell as in songname
+		DivideChar=1
+                ;;
+            \?)
+                show_help; exit 1
+                ;;
+        esac
+    done
+    shift $((OPTIND-1))
+    [[ "$userLink" == '' ]] && log 1 "You need to specify the URL" && show_help && exit 1
+}
+
+function config() { # Check for the path where download music
+    if [ -f "/$HOME/.scdl.cfg" ]; then
+        source "/$HOME/.scdl.cfg"
+    else
+        log 1 "The config file does not exist..."
+        log 1 "Please run the Installer first or add the sample config file"
+        exit
+    fi
+}
+
+function init() { # Init some variable
+    writags=1
+    default_offset=0
+    onlyrepost=0
+    AddToiTunes=1
+    customcomment=0
+    songtitleartist=1
+    NoArtistInSong=0
+    DivideChar=0
+    cont=exit
+    continue_info='exit'
+    number='^[0-9]+$'
+	logVerbosity=3
+}
+
+function check_sys() { # Check system for curl & eyed3
+    command -v curl &>/dev/null || { log 1 "cURL needs to be installed in order to run the script."; log 1 "The script will exit..."; exit 1; }
+    command -v eyeD3 &>/dev/null || { log 1 "eyeD3 needs to be installed to write tags into mp3 file."; log 2 "The script will skip this part..."; writags=0; }
+    log 4 "Using" `curl -V` | cut -c-21
+}
+
+# Launch function
+init
+config
+get_arg $@
+check_sys
+
+# Go to path
+mkdir -p "$pathtomusic"
+cd "$pathtomusic"
+
+# Play with the soundcloud url
+soundurl=$(echo "$userLink" | sed 's-.*soundcloud.com/-https://soundcloud.com/-' | cut -d "?" -f 1)
+log 3 "Using URL : $soundurl"
+d1="$(echo "$soundurl" | cut -d "/" -f 4)"
+d2="$(echo "$soundurl" | cut -d "/" -f 5)"
+d3="$(echo "$soundurl" | cut -d "/" -f 6)"
+
+# Display info of the current configuration
+log 3 "Path where i will download music: $pathtomusic"
+log 3 "I will $continue_info if I find a file that already exist"
+[[ "$AddToiTunes" == '1' ]] && log 3 "I will add this to iTunes"
+[[ "$AddToiTunes" == '0' ]] && log 3 "I WON'T add this to iTunes"
+[[ "$songtitleartist" == '1' ]] && log 3 "I will get the artist from the song title"
+[[ "$songtitleartist" == '0' ]] && log 3 "I will get the artist from the SoundCloud account of uploader"
+[[ "$customcomment" == '1' ]] && log 3 "I will set the iTunes comment to '"$comment"'"
+[[ "$customcomment" == '0' ]] && log 3 "I will set the iTunes comment to '"$comment"'"
+[[ "$KeepFolders" == '1' ]] && log 3 "I will save Reposts in the folder of the poster(He will be the artist when not -m)"
+[[ "$onlyrepost" == '1' ]] && log 3 "I will only download reposted sound"
+[[ "$default_offset" != '0' ]] && log 3 "I will begin the download at $default_offset sound"
+log 4 "Using clientID : $clientID"
+log 4 "Using "`eyeD3 --version  2>&1 | grep -m1 eye | cut -d " " -f -2`
+
+# Choose the right URL type
+if [[ "$d1" == "" ]] ; then
+    log 1 "Bad URL!"
+    show_help
+    exit 1
+elif [[ "$d1" == "groups" ]] ; then
+    log 3 "Download type: All songs from this group"
+    downgroup "$soundurl"
+elif [[ "$d2" == "likes" ]] ; then
+    log 3 "Download type: All of the users likes"
+    downlike "$soundurl"
+elif [[ "$d2" == "" ]] ; then
+    log 3 "Detected download type : All of the users songs"
+    [[ "$onlyrepost" == 1 ]] && log 3 "Only the repost will be downloaded"
+    downallsongs "$soundurl"
+elif [[ "$d2" == "sets" ]] && [[ "$d3" == "" ]] ; then
+    log 3 "Download type: All of $account sets"
+    downallsets "$soundurl"
+elif [[ "$d2" == "sets" ]] ; then
+    log 3 "Download type: Set"
+    downset "$soundurl"
+else
+    log 3 "Download type: Song "
+    downsong "$soundurl"
+fi

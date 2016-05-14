@@ -1,0 +1,71 @@
+#!/bin/bash
+# Author: Herbi3
+# Saturday, 10 October 2015
+##############################################################
+echo ''
+echo ' *---------------------------------------------------------------------------*'
+echo ' |                            SCDL Installer                                 |'
+echo ' *---------------------------------------------------------------------------*'
+echo ''
+
+## Installer Path
+cd "$( cd "$( dirname "$0" )" && pwd )"
+InstallerPath=${PWD}
+
+## Install path
+InstallToLocal=/usr/local/bin
+InstallToRoot=/usr/bin
+
+function install() {
+    detectedOS
+
+    [[ "$OSTYPE" == "linux"  ]] && sudo apt-get update && sudo apt-get -y install curl eyeD3
+    [[ "$OSTYPE" == "redhat" ]] && sudo yum install curl python-eyed3
+    [[ "$OSTYPE" == "arch"   ]] && sudo pacman -S curl python2-eyed3
+
+## Detect and install Homebrew if needed
+Brewava=$(which brew)
+if [[ "$OSTYPE" == "darwin"* ]] && [[ $Brewava != '/usr/local/bin/brew' ]] ; then
+    # Install Homebrew
+	echo "Installing Homebrew"
+    ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
+else
+    echo "Warning: Homebrew already installed"
+fi
+##
+    if [[ "$OSTYPE" == "darwin"* ]] ; then
+        brew instal curl eyeD3
+        cp $InstallerPath/scdl /usr/local/bin/
+	echo "Installed to $InstallToLocal"
+    else
+        sudo cp $InstallerPath/scdl /usr/bin/
+	echo "Installed to $InstallToRoot"
+    fi
+    cp $InstallerPath/.scdl.cfg $HOME/
+}
+
+function detectedOS(){
+    unamestr=$(uname)
+    OSTYPE=$(echo "$unamestr" | tr '[:upper:]' '[:lower:]')
+    [[ -f /etc/redhat-release  ]] && OSTYPE='redhat'
+    [[ -f /etc/arch-release    ]] && OSTYPE='arch'
+}
+
+function init(){
+if [[ -f "$HOME/.scdl.cfg" ]]; then
+    read -p 'Would you like to reinstall ? (y or n)' reinstall
+    case "$reinstall" in
+        "y")
+            echo 'Installation...' && install;;
+        "n")
+            echo 'Bye!';;
+        *)
+            echo 'Bad option' && init;;
+    esac
+else
+    echo -e 'No Config file detected... I will install scdl for you.\n'
+    install
+fi
+}
+
+init
