@@ -34,7 +34,7 @@ else
 fi
 ##
     if [[ "$OSTYPE" == "darwin"* ]] ; then
-        brew instal curl eyeD3
+        brew instal curl eye-D3
         cp $InstallerPath/scdl /usr/local/bin/
 	echo "Installed to $InstallToLocal"
     else
