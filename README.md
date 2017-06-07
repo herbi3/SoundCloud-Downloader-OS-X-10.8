@@ -1,8 +1,6 @@
 SoundCloud Music Downloader
 
-Original: https://github.com/lukapusic/soundcloud-dl
-
-Tested with OS X 10.8.5 | iTunes 12.3.3 Only
+Tested with OS X 10.8.5 | iTunes 12.3.3 & macOS 10.12.5 | iTunes 12.6.1
 
 
 1) Open and run the installer in the main folder.
